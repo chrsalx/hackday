@@ -124,4 +124,4 @@ io.on('connection', () => {
     console.log('a user connected')
 })
 
-server.listen(8080);
+server.listen(80);
