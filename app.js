@@ -1,8 +1,9 @@
+require('dotenv').config({silent: true});
+
 const Koa = require('koa');
 const Router = require('koa-router');
 const bodyParser = require('koa-bodyparser');
-const mysql = require('mysql2/promise');
-const squel = require('squel').useFlavour('mysql');
+const mongodb = require('mongodb');
 const socket = require('socket.io');
 const http = require('http');
 
@@ -23,16 +24,15 @@ router.get('/', (ctx) => {
   `;
 });
 
-router.get('/tasks', async (ctx, next) => {
-  const findQuery = squel
-    .select()
-    .from('tasks')
-    .toParam();
-
-  ctx.response.body = (await ctx.dbConnection.execute(findQuery.text, findQuery.values))[0];
-  ctx.response.status = 201;
-
-  console.log()
+router.get('/tasks', async (ctx) => {
+  ctx.response.body = await ctx
+    .dbConnection
+    .db('mydb')
+    .collection('tasks')
+    .find()
+    .sort({ createdAt: -1 })
+    .limit(500)
+    .toArray()
 });
 
 router.post('/tasks', async (ctx) => {
@@ -44,23 +44,19 @@ router.post('/tasks', async (ctx) => {
     created_at: Date.now(),
   }
 
-  const insertQuery = squel
-    .insert()
-    .into('tasks')
-    .setFields(task)
-    .toParam()
+  const { _id } = await ctx
+    .dbConnection
+    .db('mydb')
+    .collection('tasks')
+    .insertOne(task)
+    .then(r => r.ops[0]);
 
-  const [result] = await ctx.dbConnection.execute(insertQuery.text, insertQuery.values);
-  const { insertId: id } = result;
+  ctx.response.body = await ctx
+    .dbConnection
+    .db('mydb')
+    .collection('tasks')
+    .findOne({ _id });
 
-  const findQuery = squel
-    .select()
-    .from('tasks')
-    .where('id = ?', id)
-    .toParam();
-
-  // sql2 response after select = [[arrayWithData], [arrayWithMetadata]];
-  ctx.response.body = (await ctx.dbConnection.execute(findQuery.text, findQuery.values))[0][0]
   ctx.response.status = 201;
 });
 
@@ -114,14 +110,8 @@ router.post('/tasks/:taskId/done', async (ctx) => {
 app
   .use(bodyParser())
   .use(async (ctx, next) => {
-    const connection = await mysql.createConnection({
-      host: 'mysql',
-      user: 'test',
-      password: 'test',
-      database: 'hackday'
-    });
+    const connection = await mongodb.MongoClient.connect(process.env.MONGODB_URL);
     ctx.dbConnection = connection;
-
     await next();
   })
   .use(router.routes())
