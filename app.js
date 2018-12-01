@@ -5,10 +5,13 @@ const Router = require('koa-router');
 const bodyParser = require('koa-bodyparser');
 const mongodb = require('mongodb');
 const socket = require('socket.io');
+const cors = require('@koa/cors');
 const http = require('http');
 
 const app = new Koa();
 const router = new Router();
+
+let io;
 
 router.get('/', (ctx) => {
   ctx.response.body = `
@@ -18,7 +21,7 @@ router.get('/', (ctx) => {
     </body>
     <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.2.0/socket.io.js"></script>
     <script>
-      var socket = io('http://localhost:8080');
+      var socket = io('http://localhost');
     </script>
   </html>
   `;
@@ -44,7 +47,7 @@ router.post('/tasks', async (ctx) => {
     created_at: Date.now(),
   }
 
-  const { _id } = await ctx
+  const result = await ctx
     .dbConnection
     .db('mydb')
     .collection('tasks')
@@ -55,7 +58,9 @@ router.post('/tasks', async (ctx) => {
     .dbConnection
     .db('mydb')
     .collection('tasks')
-    .findOne({ _id });
+    .findOne({ _id: result._id });
+
+  io.emit('task-created', result);
 
   ctx.response.status = 201;
 });
@@ -108,6 +113,7 @@ router.post('/tasks/:taskId/done', async (ctx) => {
 });
 
 app
+  .use(cors())
   .use(bodyParser())
   .use(async (ctx, next) => {
     const connection = await mongodb.MongoClient.connect(process.env.MONGODB_URL);
@@ -118,7 +124,7 @@ app
   .use(router.allowedMethods());
 
 const server = http.createServer(app.callback())
-const io = socket(server);
+io = socket(server);
 
 io.on('connection', () => {
     console.log('a user connected')
